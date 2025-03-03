@@ -54,20 +54,26 @@ public class PersistentContainer: NSPersistentContainer, CoreDataPersistentConta
     
     private func startDestroyTimer() {
         Timer.publish(every: readContextTimeOut, on: .main, in: .common)
-            .autoconnect()
-            .receive(on: readContextsQueue)
-            .map { [unowned self] _ in lastUsedContexts }
-            .map { [unowned self] in
-                $0.filter { Date().timeIntervalSince($0.value) >= readContextTimeOut }
-            }
-            .map { $0.keys }
-            .sink { [unowned self] in
-                $0.forEach {
-                    readContexts[$0] = nil
-                    lastUsedContexts[$0] = nil
+                .autoconnect()
+                .receive(on: readContextsQueue)
+                .map { [weak self] _ -> [NSManagedContextScope: Date] in
+                    // If self is nil, return an empty dictionary.
+                    return self?.lastUsedContexts ?? [:]
                 }
-            }
-            .store(in: &cancellables)
+                .map { [weak self] in
+                    // If self is nil, return an empty filter result.
+                    guard let self = self else { return [NSManagedContextScope: Date]() }
+                    return $0.filter { Date().timeIntervalSince($0.value) >= self.readContextTimeOut }
+                }
+                .map { $0.keys }
+                .sink { [weak self] scopes in
+                    guard let self = self else { return }
+                    scopes.forEach {
+                        self.readContexts[$0] = nil
+                        self.lastUsedContexts[$0] = nil
+                    }
+                }
+                .store(in: &cancellables)
     }
     
     public func contextForWriting() -> AnyPublisher<NSManagedObjectContext, Error> {
@@ -106,8 +112,8 @@ public class PersistentContainer: NSPersistentContainer, CoreDataPersistentConta
     private func handleSave() {
         guard let writeContext = writeContext else { return }
         NotificationCenter.default.publisher(for: .NSManagedObjectContextDidSave, object: writeContext)
-            .sink { [unowned self] note in
-                viewContext.perform { [weak self] in
+            .sink { [weak self] note in
+                self?.viewContext.perform {
                     self?.viewContext.mergeChanges(fromContextDidSave: note)
                 }
             }
