@@ -28,6 +28,15 @@
       }
     },
     {
+      "identity" : "grdb.swift",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/groue/GRDB.swift",
+      "state" : {
+        "revision" : "6eba24d16952452a8a54f6a639491f3c8215527f",
+        "version" : "7.3.0"
+      }
+    },
+    {
       "identity" : "pusher-websocket-swift",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/pusher/pusher-websocket-swift.git",

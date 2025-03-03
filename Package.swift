@@ -68,14 +68,16 @@ let package = Package(
         .package(url: "https://github.com/typelift/SwiftCheck", exact: "0.12.0"),
         .package(url: "https://github.com/apple/swift-argument-parser", exact: "1.2.3"),
         .package(url: "https://github.com/Image-Plus-Apps/combine-extensions", exact: "0.0.6"),
-        .package(url: "https://github.com/pusher/pusher-websocket-swift.git", exact: "8.0.0")
+        .package(url: "https://github.com/pusher/pusher-websocket-swift.git", exact: "8.0.0"),
+        .package(url: "https://github.com/groue/GRDB.swift", exact: "7.3.0")
     ],
     targets: [
         .target(
             name: "AppsPlusData",
             sources: ["Data"],
             dependencies: [
-                .product(name: "PusherSwift", package: "pusher-websocket-swift")
+                .product(name: "PusherSwift", package: "pusher-websocket-swift"),
+                .product(name: "GRDB", package: "GRDB")
             ]
         ),
         .testTarget(
