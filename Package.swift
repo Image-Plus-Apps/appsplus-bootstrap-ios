@@ -77,7 +77,7 @@ let package = Package(
             sources: ["Data"],
             dependencies: [
                 .product(name: "PusherSwift", package: "pusher-websocket-swift"),
-                .product(name: "GRDB", package: "GRDB")
+                .product(name: "GRDB", package: "GRDB.swift")
             ]
         ),
         .testTarget(
