@@ -8,28 +8,34 @@ public enum RetryState: Hashable {
 public enum PagingState: Hashable {
     case idle
     case initialLoad
-    case initialLoadError
+    case initialLoadError(ErrorWrapper)
     case refreshing
-    case refreshingError
+    case refreshingError(ErrorWrapper)
     case paging
-    case pagingError
+    case pagingError(ErrorWrapper)
     
     public func canPage() -> Bool {
         self == .idle
     }
     
     public func canRefresh() -> Bool {
-        [.idle, .refreshingError, .paging, .pagingError].contains(self)
+        switch self {
+        case .idle, .refreshing, .refreshingError, .paging, .pagingError:
+            return true
+        default:
+            return false
+        }
     }
     
-    mutating public func failed() {
+    mutating public func failed(error: Error) {
+        let error = error.wrapped
         switch self {
         case .initialLoad:
-            self = .initialLoadError
+            self = .initialLoadError(error)
         case .refreshing:
-            self = .refreshingError
+            self = .refreshingError(error)
         case .paging:
-            self = .pagingError
+            self = .pagingError(error)
         default:
             break
         }
@@ -44,5 +50,23 @@ public enum PagingState: Hashable {
         default:
             return nil
         }
+    }
+}
+
+public struct ErrorWrapper: Error, Hashable {
+    public let error: Error
+    
+    public static func == (lhs: ErrorWrapper, rhs: ErrorWrapper) -> Bool {
+        return lhs.error.localizedDescription == rhs.error.localizedDescription
+    }
+    
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(error.localizedDescription)
+    }
+}
+
+public extension Error {
+    var wrapped: ErrorWrapper {
+        return ErrorWrapper(error: self)
     }
 }
