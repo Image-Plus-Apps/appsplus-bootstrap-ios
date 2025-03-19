@@ -27,7 +27,7 @@ public enum PagingState: Hashable {
         }
     }
     
-    mutating public func failed(error: Error) {
+    mutating public func failed(_ error: Error) {
         let error = error.wrapped
         switch self {
         case .initialLoad:
