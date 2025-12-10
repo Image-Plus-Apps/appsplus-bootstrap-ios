@@ -18,11 +18,11 @@ public struct IPAsyncImage: Identifiable {
 
 public struct IPAsyncImageView: UIViewRepresentable {
     
-    @Binding public var image: IPAsyncImage
+    public var image: IPAsyncImage
     public let contentMode: UIView.ContentMode
     
-    public init(image: Binding<IPAsyncImage>, contentMode: UIView.ContentMode) {
-        self._image = image
+    public init(image: IPAsyncImage, contentMode: UIView.ContentMode) {
+        self.image = image
         self.contentMode = contentMode
     }
     
