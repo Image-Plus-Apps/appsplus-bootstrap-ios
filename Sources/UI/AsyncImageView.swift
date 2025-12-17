@@ -9,6 +9,12 @@ public struct AssetImage {
     let image: UIImage
     let isCached: Bool
     let originalRequest: AsyncImage
+    
+    public init(image: UIImage, isCached: Bool, originalRequest: AsyncImage) {
+        self.image = image
+        self.isCached = isCached
+        self.originalRequest = originalRequest
+    }
 }
 
 @available(iOS 13.0, tvOS 13.0, *)
