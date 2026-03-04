@@ -13,25 +13,24 @@ public class BearerAuthenticator<AuthToken: AuthTokenProtocol>: Authenticator {
     /// A callback that provides additional headers to be set on all authenticated requests.
     /// The callback receives the current auth token and returns a dictionary of header fields and values.
     public var globalHeadersProvider: ((AuthToken) -> [HTTPHeaderField: HTTPHeaderValue])?
-
-    public init(authSessionProvider: AuthSessionProvider, refreshUrl: URL?, bundleIdentifier: String, version: String) {
-        self.authSessionProvider = authSessionProvider
-        self.refreshUrl = refreshUrl
-        self.version = version
-    }
     
-    /// Convenience initializer with global headers provider
+    /// A callback for logging all requests.
+    /// The callback receives the Request before it's sent for execution.
+    public var globalRequestLogger: ((Request) -> Void)?
+
     public init(
         authSessionProvider: AuthSessionProvider,
         refreshUrl: URL?,
         bundleIdentifier: String,
         version: String,
-        globalHeadersProvider: ((AuthToken) -> [HTTPHeaderField: HTTPHeaderValue])?
+        globalHeadersProvider: ((AuthToken) -> [HTTPHeaderField: HTTPHeaderValue])? = nil,
+        globalRequestLogger: ((Request) -> Void)? = nil
     ) {
         self.authSessionProvider = authSessionProvider
         self.refreshUrl = refreshUrl
         self.version = version
         self.globalHeadersProvider = globalHeadersProvider
+        self.globalRequestLogger = globalRequestLogger
     }
 
     private func refreshToken(authSession: AuthToken, urlSession: URLSession) async throws -> AuthToken {
@@ -51,6 +50,10 @@ public class BearerAuthenticator<AuthToken: AuthTokenProtocol>: Authenticator {
         request.set(httpMethod: .post)
         try request.set(httpBody: ["device_name": authSessionProvider.deviceName])
         request.set(headerField: .authorization, value: .bearer(token: authSession.refreshToken))
+        
+        // Log the refresh token request if logger is set
+        let refreshRequest = AuthenticatedRequest(urlRequest: request)
+        globalRequestLogger?(refreshRequest)
 
         do {
             let (data, _) = try await urlSession.data(for: request)
@@ -69,6 +72,8 @@ public class BearerAuthenticator<AuthToken: AuthTokenProtocol>: Authenticator {
 
     public func authenticate(request: Request, forceRefresh: Bool, urlSession: URLSession) async throws -> URLRequest {
         guard request.requiresAuthentication else {
+            // Log non-authenticated requests
+            globalRequestLogger?(request)
             return request.urlRequest
         }
 
@@ -92,6 +97,9 @@ public class BearerAuthenticator<AuthToken: AuthTokenProtocol>: Authenticator {
                 urlRequest.set(headerField: field, value: value)
             }
         }
+        
+        // Log the request if logger is set
+        globalRequestLogger?(request)
         
         return urlRequest
     }
