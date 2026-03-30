@@ -11,11 +11,22 @@ public class BearerAuthenticator<AuthToken: AuthTokenProtocol>: Authenticator {
     private let authSessionProvider: AuthSessionProvider
     private let refreshUrl: URL?
     private let version: String
+    private let globalHeadersProvider: ((AuthToken) -> [HTTPHeaderField: HTTPHeaderValue])?
+    private let globalRequestLogger: ((Request) -> Void)?
     
-    public init(authSessionProvider: AuthSessionProvider, refreshUrl: URL?, bundleIdentifier: String, version: String) {
+    public init(
+        authSessionProvider: AuthSessionProvider,
+        refreshUrl: URL?,
+        bundleIdentifier: String,
+        version: String,
+        globalHeadersProvider: ((AuthToken) -> [HTTPHeaderField: HTTPHeaderValue])? = nil,
+        globalRequestLogger: ((Request) -> Void)? = nil
+    ) {
         self.authSessionProvider = authSessionProvider
         self.refreshUrl = refreshUrl
         self.version = version
+        self.globalHeadersProvider = globalHeadersProvider
+        self.globalRequestLogger = globalRequestLogger
         self.queue = DispatchQueue(label: bundleIdentifier.appending(".network.bearerauthenticator"))
     }
     
@@ -30,10 +41,12 @@ public class BearerAuthenticator<AuthToken: AuthTokenProtocol>: Authenticator {
             
             var request = URLRequest(url: refreshUrl, versionNumber: version)
             request.set(httpMethod: .post)
+            globalHeadersProvider?(authSession).forEach { request.set(headerField: $0.key, value: $0.value) }
             request.set(headerField: .authorization, value: .bearer(token: authSession.refreshToken))
             try? request.set(httpBody: [
                 "device_name": authSessionProvider.deviceName
             ])
+            globalRequestLogger?(AuthenticatedRequest(urlRequest: request))
             
             let refreshPublisher = urlSession
                 .dataTaskPublisher(for: request)
@@ -64,6 +77,7 @@ public class BearerAuthenticator<AuthToken: AuthTokenProtocol>: Authenticator {
     
     public func authenticate(request: Request, forceRefresh: Bool, urlSession: URLSession) -> AnyPublisher<URLRequest, AuthenticatorError> {
         guard request.requiresAuthentication else {
+            globalRequestLogger?(request)
             return Just(request.urlRequest)
                 .setFailureType(to: AuthenticatorError.self)
                 .eraseToAnyPublisher()
@@ -76,16 +90,20 @@ public class BearerAuthenticator<AuthToken: AuthTokenProtocol>: Authenticator {
         
         if forceRefresh {
             return refreshToken(authSession: authSession, urlSession: urlSession)
-                .map {
+                .map { [globalHeadersProvider, globalRequestLogger] token in
                     var urlRequest = request.urlRequest
-                    urlRequest.set(headerField: .authorization, value: .bearer(token: $0.accessToken))
+                    globalHeadersProvider?(token).forEach { urlRequest.set(headerField: $0.key, value: $0.value) }
+                    urlRequest.set(headerField: .authorization, value: .bearer(token: token.accessToken))
+                    globalRequestLogger?(AuthenticatedRequest(urlRequest: urlRequest))
                     return urlRequest
                 }
                 .eraseToAnyPublisher()
         }
         
         var urlRequest = request.urlRequest
+        globalHeadersProvider?(authSession).forEach { urlRequest.set(headerField: $0.key, value: $0.value) }
         urlRequest.set(headerField: .authorization, value: .bearer(token: authSession.accessToken))
+        globalRequestLogger?(AuthenticatedRequest(urlRequest: urlRequest))
         return Just(urlRequest)
             .setFailureType(to: AuthenticatorError.self)
             .eraseToAnyPublisher()

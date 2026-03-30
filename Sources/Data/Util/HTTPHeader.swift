@@ -2,7 +2,7 @@
 
 import Foundation
 
-public struct HTTPHeaderField {
+public struct HTTPHeaderField: Hashable {
     fileprivate let rawValue: String
     
     public init(_ value: String) {
