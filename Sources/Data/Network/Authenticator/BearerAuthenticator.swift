@@ -3,7 +3,7 @@
 import Foundation
 
 @available(iOS 15.0, tvOS 15.0, macOS 12.0, watchOS 8.0, *)
-public class BearerAuthenticator<AuthToken: AuthTokenProtocol>: Authenticator {
+public class BearerAuthenticator<AuthToken: AuthTokenProtocol>: Authenticator, @unchecked Sendable {
 
     private let authSessionProvider: AuthSessionProvider
     private let refreshUrl: URL?

@@ -2,7 +2,7 @@
 
 import Foundation
 
-public struct MockCodable: Codable, Equatable {
+public struct MockCodable: Codable, Equatable, Sendable {
     let value: String
 }
 

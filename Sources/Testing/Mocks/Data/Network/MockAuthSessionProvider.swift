@@ -3,7 +3,7 @@ import Foundation
 import Combine
 
 @available(iOS 13.0, tvOS 13.0, macOS 10.15, watchOS 6.0, *)
-public class MockAuthSessionProvider<AuthToken: AuthTokenProtocol>: AuthSessionProvider {
+public class MockAuthSessionProvider<AuthToken: AuthTokenProtocol>: AuthSessionProvider, @unchecked Sendable {
     
     public var currentAuthSession: AuthToken?
     public var replacedAuthSession: AuthToken?

@@ -2,7 +2,7 @@
 
 import Foundation
 
-public protocol AuthTokenProtocol: Codable, Equatable {
+public protocol AuthTokenProtocol: Codable, Equatable, Sendable {
     var accessToken: String { get }
     var refreshToken: String { get }
 }
@@ -15,7 +15,7 @@ extension AuthTokenProtocol {
     
 }
 
-public struct AnyAuthToken: AuthTokenProtocol, Equatable, Codable {
+public struct AnyAuthToken: AuthTokenProtocol, Equatable, Codable, @unchecked Sendable {
     
     private struct SimpleToken: AuthTokenProtocol {
         let accessToken: String

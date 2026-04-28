@@ -3,7 +3,7 @@
 import Foundation
 @testable import AppsPlusData
 
-public class MockKeyValueStorage: KeyValueStorage {
+public class MockKeyValueStorage: KeyValueStorage, @unchecked Sendable {
     
     public var setStrings = [KeyValueStorageKey: String?]()
     public var removedKeys = [KeyValueStorageKey]()

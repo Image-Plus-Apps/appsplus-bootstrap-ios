@@ -5,7 +5,7 @@ import Combine
 @testable import AppsPlusData
 
 @available(iOS 13.0, tvOS 13.0, macOS 10.15, watchOS 6.0, *)
-public class MockPersistentStorage: PersistentStorage {
+public class MockPersistentStorage: PersistentStorage, @unchecked Sendable {
     
     public enum StorageError: Error {
         case failedToFetch
@@ -76,7 +76,7 @@ public class MockPersistentStorage: PersistentStorage {
 }
 
 @available(iOS 13.0, tvOS 13.0, macOS 10.15, watchOS 6.0, *)
-public class MockPersistentStoreUpdate: PersistentStoreUpdate {
+public class MockPersistentStoreUpdate: PersistentStoreUpdate, @unchecked Sendable {
     
     public let parent: MockPersistentStorage
     public var identifier: String {
@@ -94,7 +94,7 @@ public class MockPersistentStoreUpdate: PersistentStoreUpdate {
 }
 
 @available(iOS 13.0, tvOS 13.0, macOS 10.15, watchOS 6.0, *)
-public class MockAsynchronousEntity<EntityType>: AsynchronousEntity {
+public class MockAsynchronousEntity<EntityType>: AsynchronousEntity, @unchecked Sendable {
     
     public let parent: MockPersistentStorage
     

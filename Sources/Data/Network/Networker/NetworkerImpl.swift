@@ -4,7 +4,7 @@
 //import Combine
 //
 //@available(iOS 13.0, tvOS 13.0, macOS 10.15, watchOS 6.0, *)
-//public struct NetworkerImpl: Network {
+//public struct NetworkerImpl: Network, @unchecked Sendable {
 //    
 //    private enum RequestError: Error {
 //        case unauthorized

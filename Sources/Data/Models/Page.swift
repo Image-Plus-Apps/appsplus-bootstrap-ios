@@ -27,6 +27,8 @@ public struct Page<T> {
 
 extension Page: Codable where T: Codable {}
 extension Page: Equatable where T: Equatable {}
+extension Page: Sendable where T: Sendable {}
+extension Page.Meta: Sendable {}
 
 extension Page {
     

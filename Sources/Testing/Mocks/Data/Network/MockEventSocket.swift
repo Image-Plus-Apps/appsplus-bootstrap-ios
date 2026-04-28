@@ -1,7 +1,7 @@
 import AppsPlusData
 import Combine
 
-public class MockEventSocket: EventSocket {
+public class MockEventSocket: EventSocket, @unchecked Sendable {
     
     public init() {}
     

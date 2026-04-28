@@ -39,7 +39,7 @@ extension SynchronousEntity {
 }
 
 @available(iOS 13.0, tvOS 13.0, macOS 10.15, watchOS 6.0, *)
-public struct AnySynchronousEntity<EntityType>: SynchronousEntity {
+public struct AnySynchronousEntity<EntityType>: SynchronousEntity, @unchecked Sendable {
     
     private var createMethod: () -> SynchronousUpdateRequest<EntityType>
     private var updateMethod: (Bool) -> SynchronousUpdateRequest<EntityType>

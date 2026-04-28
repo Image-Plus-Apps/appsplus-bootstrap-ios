@@ -1,11 +1,11 @@
 import Foundation
 
-public enum RetryState: Hashable {
+public enum RetryState: Hashable, Sendable {
     case refresh
     case page
 }
 
-public enum PagingState: Hashable {
+public enum PagingState: Hashable, @unchecked Sendable {
     case idle
     case initialLoad
     case initialLoadError(ErrorWrapper)
@@ -53,7 +53,7 @@ public enum PagingState: Hashable {
     }
 }
 
-public struct ErrorWrapper: Error, Hashable {
+public struct ErrorWrapper: Error, Hashable, @unchecked Sendable {
     public let error: Error
     
     public static func == (lhs: ErrorWrapper, rhs: ErrorWrapper) -> Bool {

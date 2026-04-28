@@ -1,6 +1,6 @@
 import Foundation
 
-enum SocketChannelError: Error {
+enum SocketChannelError: Error, Sendable {
     case unknownError
     case failedToSubscribe(channel: SocketChannel, error: NSError?)
 }

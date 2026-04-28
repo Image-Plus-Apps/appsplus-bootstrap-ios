@@ -2,16 +2,16 @@
 import Foundation
 import GRDB
 
-public protocol LocalDatabase {
+public protocol LocalDatabase: Sendable {
     var database: DatabasePool { get }
 }
 
-public protocol DatabaseMigration {
+public protocol DatabaseMigration: Sendable {
     var name: String { get }
     func migrate(_ db: Database) throws
 }
 
-public struct LocalDatabaseImpl {
+public struct LocalDatabaseImpl: LocalDatabase, Sendable {
 
     public let database: DatabasePool
     private let migrations: [DatabaseMigration]

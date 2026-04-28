@@ -9,7 +9,7 @@ enum CoreDataPersistentStorageError: Error {
 }
 
 @available(iOS 13.0, tvOS 13.0, macOS 10.15, watchOS 6.0, *)
-public class CoreDataPersistentStorage: PersistentStorage {
+public class CoreDataPersistentStorage: PersistentStorage, @unchecked Sendable {
     
     let identifier = "CoreDataPersistentStorage.\(UUID().uuidString)"
     let container: CoreDataPersistentContainer

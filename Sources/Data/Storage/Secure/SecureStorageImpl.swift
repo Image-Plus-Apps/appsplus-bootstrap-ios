@@ -2,7 +2,7 @@
 
 import Foundation
 
-public struct SecureStorageImpl: SecureStorage {
+public struct SecureStorageImpl: SecureStorage, @unchecked Sendable {
     
     private let keychain: KeychainAccess
     private let encoder: JSONEncoder

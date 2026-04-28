@@ -2,7 +2,7 @@
 import Foundation
 
 @available(iOS 13.0, tvOS 13.0, macOS 10.15, watchOS 6.0, *)
-public struct ServerError: Codable, Error {
+public struct ServerError: Codable, Error, Sendable {
     
     let message: String
 }

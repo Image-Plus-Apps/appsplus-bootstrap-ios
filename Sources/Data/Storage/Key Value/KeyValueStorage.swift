@@ -2,7 +2,7 @@
 
 import Foundation
 
-public struct KeyValueStorageKey: Hashable {
+public struct KeyValueStorageKey: Hashable, Sendable {
     public let rawValue: String
     
     public init(value: String) {
@@ -18,7 +18,7 @@ extension KeyValueStorageKey: ExpressibleByStringLiteral {
     
 }
 
-public protocol KeyValueStorage {
+public protocol KeyValueStorage: Sendable {
     func setValue<E: Encodable>(_ value: E, forKey key: KeyValueStorageKey)
     func value<D: Decodable>(forKey key: KeyValueStorageKey) -> D?
     

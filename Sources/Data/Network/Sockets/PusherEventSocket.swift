@@ -4,7 +4,7 @@ import Foundation
 import Combine
 import PusherSwift
 
-public class PusherEventSocket: EventSocket, PusherDelegate {
+public class PusherEventSocket: EventSocket, PusherDelegate, @unchecked Sendable {
 
     class AuthRequestBuilder: AuthRequestBuilderProtocol {
         private var request: URLRequest

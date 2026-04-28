@@ -3,7 +3,7 @@
 import Foundation
 @testable import AppsPlusData
 
-public class MockSecureStorage: SecureStorage {
+public class MockSecureStorage: SecureStorage, @unchecked Sendable {
     
     public var setStrings = [SecureStorageKey: String?]()
     public var removedKeys = [SecureStorageKey]()

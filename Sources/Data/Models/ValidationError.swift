@@ -2,11 +2,11 @@
 
 import Foundation
 
-public enum ValidationParseError: Error {
+public enum ValidationParseError: Error, Sendable {
     case failedToParse
 }
 
-public struct ValidationError<Field: Hashable & CaseIterable & RawRepresentable>: Equatable, Error where Field.RawValue == String {
+public struct ValidationError<Field: Hashable & CaseIterable & RawRepresentable & Sendable>: Equatable, Error, Sendable where Field.RawValue == String {
     public let errors: [Field: [String]]
     
     public init(errors: [Field: [String]]) {

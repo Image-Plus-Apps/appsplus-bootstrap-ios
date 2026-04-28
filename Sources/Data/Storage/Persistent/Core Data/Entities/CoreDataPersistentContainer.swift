@@ -9,7 +9,7 @@ extension String {
 }
 
 @available(iOS 13.0, tvOS 13.0, macOS 10.15, watchOS 6.0, *)
-public protocol CoreDataPersistentContainer {
+public protocol CoreDataPersistentContainer: Sendable {
     
     func loadPersistentStores(completionHandler block: @escaping (NSPersistentStoreDescription, Error?) -> Void)
     func contextForWriting() -> AnyPublisher<NSManagedObjectContext, Error>
@@ -17,7 +17,7 @@ public protocol CoreDataPersistentContainer {
 }
 
 @available(iOS 13.0, tvOS 13.0, macOS 10.15, watchOS 6.0, *)
-public class PersistentContainer: NSPersistentContainer, CoreDataPersistentContainer {
+public class PersistentContainer: NSPersistentContainer, CoreDataPersistentContainer, @unchecked Sendable {
     
     enum PersistentContainerError: Error {
         case writeUnavailable

@@ -1,7 +1,7 @@
 #if canImport(UIKit)
 import UIKit
 
-public enum CornerRadius: Hashable {
+public enum CornerRadius: Hashable, Sendable {
     case value(CGFloat)
     case percentage(CGFloat)
 }

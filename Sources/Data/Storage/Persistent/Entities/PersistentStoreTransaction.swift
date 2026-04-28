@@ -4,7 +4,7 @@ import Foundation
 import Combine
 
 @available(iOS 13.0, tvOS 13.0, macOS 10.15, watchOS 6.0, *)
-public struct PersistentStoreTransaction {
+public struct PersistentStoreTransaction: @unchecked Sendable {
     
     typealias PublisherType = (PersistentStoreTransaction) -> AnyPublisher<PersistentStoreUpdate, Error>
     public typealias Transaction = (SynchronousStorage) throws -> Void

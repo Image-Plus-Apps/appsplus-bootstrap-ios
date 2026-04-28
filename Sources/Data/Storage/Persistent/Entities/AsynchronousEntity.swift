@@ -32,7 +32,7 @@ extension AsynchronousEntity {
 }
 
 @available(iOS 13.0, tvOS 13.0, macOS 10.15, watchOS 6.0, *)
-public struct AnyAsynchronousEntity<EntityType>: AsynchronousEntity {
+public struct AnyAsynchronousEntity<EntityType>: AsynchronousEntity, @unchecked Sendable {
     
     private var createMethod: () -> AsynchronousUpdateRequest<EntityType>
     private var updateMethod: (Bool) -> AsynchronousUpdateRequest<EntityType>

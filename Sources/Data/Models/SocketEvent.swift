@@ -1,6 +1,6 @@
 import Foundation
 
-public struct SocketEvent: Equatable {
+public struct SocketEvent: Equatable, Sendable {
     public let rawValue: String
     
     public init(rawValue: String) {

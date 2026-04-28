@@ -1,6 +1,6 @@
 import Foundation
 
-public struct TimeLock {
+public struct TimeLock: Sendable {
     
     enum TimeLockError: Error {
         case tooEarly

@@ -2,7 +2,7 @@
 
 import Foundation
 
-public struct HTTPMethod {
+public struct HTTPMethod: Sendable {
     fileprivate let rawValue: String
 }
 

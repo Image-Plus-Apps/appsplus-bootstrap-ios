@@ -2,7 +2,7 @@
 
 import Foundation
 
-public struct HTTPHeaderField: Hashable {
+public struct HTTPHeaderField: Hashable, Sendable {
     fileprivate let rawValue: String
     
     public init(_ value: String) {
@@ -26,7 +26,7 @@ extension HTTPHeaderField {
     public static let deviceVersion: Self = "Device-Version"
 }
 
-public struct HTTPHeaderValue {
+public struct HTTPHeaderValue: Sendable {
     fileprivate let rawValue: String
 }
 

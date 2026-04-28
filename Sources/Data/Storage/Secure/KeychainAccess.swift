@@ -2,7 +2,7 @@
 
 import Foundation
 
-public protocol KeychainAccess {
+public protocol KeychainAccess: Sendable {
     func set(_ value: String, key: String, ignoringAttributeSynchronizable: Bool) throws
     func set(_ value: Data, key: String, ignoringAttributeSynchronizable: Bool) throws
     

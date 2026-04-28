@@ -2,7 +2,7 @@
 
 import Foundation
 
-public protocol KeyValueStore {
+public protocol KeyValueStore: Sendable {
     func set(_ value: Any?, forKey defaultName: String)
     func string(forKey defaultName: String) -> String?
     

@@ -2,7 +2,7 @@
 
 import Foundation
 
-public struct KeyValueStorageImpl: KeyValueStorage {
+public struct KeyValueStorageImpl: KeyValueStorage, @unchecked Sendable {
     
     private let keyValueStore: KeyValueStore
     private let encoder: JSONEncoder

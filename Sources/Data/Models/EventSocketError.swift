@@ -1,5 +1,5 @@
 import Foundation
 
-enum EventSocketError: Error {
+enum EventSocketError: Error, Sendable {
     case unknown
 }

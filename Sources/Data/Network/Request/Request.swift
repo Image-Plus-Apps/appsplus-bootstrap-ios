@@ -2,14 +2,14 @@
 
 import Foundation
 
-public protocol Request {
+public protocol Request: Sendable {
     
     var urlRequest: URLRequest { get }
     var requiresAuthentication: Bool { get }
     
 }
 
-public struct AuthenticatedRequest: Request {
+public struct AuthenticatedRequest: Request, Sendable {
     
     public let urlRequest: URLRequest
     public let requiresAuthentication = true
@@ -20,7 +20,7 @@ public struct AuthenticatedRequest: Request {
     
 }
 
-public struct PublicRequest: Request {
+public struct PublicRequest: Request, Sendable {
     
     public let urlRequest: URLRequest
     public let requiresAuthentication = false

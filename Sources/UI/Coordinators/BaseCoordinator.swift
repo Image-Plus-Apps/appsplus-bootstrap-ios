@@ -2,6 +2,7 @@
 
 import UIKit
 
+@MainActor
 public protocol Coordinator: AnyObject {
     
     var childCoordinators: [Coordinator] { get set }
@@ -9,6 +10,7 @@ public protocol Coordinator: AnyObject {
     
 }
 
+@MainActor
 open class BaseCoordinator: Coordinator {
     
     public var childCoordinators: [Coordinator] = []

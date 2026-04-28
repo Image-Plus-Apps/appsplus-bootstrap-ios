@@ -4,7 +4,7 @@ import Foundation
 import Combine
 
 @available(iOS 13.0, tvOS 13.0, macOS 10.15, watchOS 6.0, *)
-public protocol AuthSessionProvider {
+public protocol AuthSessionProvider: Sendable {
     var deviceName: String { get }
     func current() -> AnyAuthToken?
     func current<T: AuthTokenProtocol>(as type: T.Type) -> T?
