@@ -1,6 +1,7 @@
-#if canImport(UIKit) && (os(iOS) || os(tvOS) || os(macOS))
+#if canImport(UIKit) && canImport(SwiftUI) && (os(iOS) || os(tvOS) || os(macOS))
 
 import UIKit
+import SwiftUI
 
 @MainActor
 public protocol Coordinator: AnyObject {
@@ -10,15 +11,30 @@ public protocol Coordinator: AnyObject {
     
 }
 
+@available(iOS 16.0, tvOS 16.0, macOS 13.0, watchOS 9.0, *)
 @MainActor
-open class BaseCoordinator: Coordinator {
+open class BaseCoordinator<Route: Hashable>: Coordinator {
     
     public var childCoordinators: [Coordinator] = []
+    public var path = NavigationPath()
     
     public init() {}
     
     open func start() {
-        // Implementation specific to the coordinator
+        fatalError("start() must be overridden by subclass")
+    }
+    
+    public func push(_ route: Route) {
+        path.append(route)
+    }
+    
+    public func pop() {
+        guard !path.isEmpty else { return }
+        path.removeLast()
+    }
+    
+    public func popToRoot() {
+        path = NavigationPath()
     }
     
     public func addChildCoordinator(_ coordinator: Coordinator) {
