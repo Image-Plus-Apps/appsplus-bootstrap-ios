@@ -28,10 +28,7 @@ public protocol AsyncImage {
 
 extension AsyncImage {
     public func clearCache() {
-        guard let key = key else {
-            return
-        }
-        ImageCache.shared.clearCache(for: key)
+        ImageCache.shared.clearCache()
     }
 }
 
@@ -70,17 +67,19 @@ extension URL: AsyncImage {
     }
     
     public func imagePublisher() -> AnyPublisher<AssetImage, URLError> {
-        if let cachedResult = URLCache.shared.cachedResponse(for: URLRequest(url: self)),
+        let request = URLRequest(url: self)
+        if let cachedResult = URLCache.shared.cachedResponse(for: request),
            let image = UIImage(data: cachedResult.data) {
             return Just(AssetImage(image: image, isCached: true, originalRequest: self))
                 .setFailureType(to: URLError.self)
                 .eraseToAnyPublisher()
         }
         return URLSession.shared.dataTaskPublisher(for: self)
-            .tryMap { data, _ in
+            .tryMap { data, response in
                 guard let image = UIImage(data: data) else {
                     throw URLError(.cannotDecodeRawData)
                 }
+                URLCache.shared.storeCachedResponse(CachedURLResponse(response: response, data: data), for: request)
                 return AssetImage(image: image, isCached: false, originalRequest: self)
             }
             .mapError { $0 as? URLError ?? URLError(.badServerResponse) }
@@ -202,7 +201,7 @@ public class AsyncImageView: UIView {
     private var imageCancellable: AnyCancellable?
     private let imageView = UIImageView()
     private let activityIndicatorView = UIActivityIndicatorView(style: .medium)
-    private let resizeQueue = DispatchQueue(label: Bundle.main.bundleIdentifier ?? "" + ".graphics.resize")
+    private let resizeQueue = DispatchQueue(label: (Bundle.main.bundleIdentifier ?? "") + ".graphics.resize")
     public var shouldAutoResize = true
     
     public override var contentMode: UIView.ContentMode {
@@ -274,24 +273,27 @@ public class AsyncImageView: UIView {
         setNeedsFetchImage = false
         state = .loading
         imageCancellable = image.imagePublisher()
-            .flatMap { [unowned self] (assetImage: AssetImage) -> AnyPublisher<AssetImage, URLError> in
-                self.resizeImage(assetImage)
+            .flatMap { [weak self] (assetImage: AssetImage) -> AnyPublisher<AssetImage, URLError> in
+                guard let self = self else {
+                    return Empty().eraseToAnyPublisher()
+                }
+                return self.resizeImage(assetImage)
             }
             .receive(on: DispatchQueue.main)
-            .sink(receiveCompletion: { [unowned self] completion in
+            .sink(receiveCompletion: { [weak self] completion in
                 switch completion {
                 case .finished:
-                    state = .success
+                    self?.state = .success
                 case .failure:
-                    state = .failed
+                    self?.state = .failed
                 }
-                imageCancellable = nil
-            }, receiveValue: { [unowned self] result in
-                imageView.image = result.image
+                self?.imageCancellable = nil
+            }, receiveValue: { [weak self] result in
+                self?.imageView.image = result.image
                 if result.isCached {
-                    imageView.alpha = 1
+                    self?.imageView.alpha = 1
                 } else {
-                    UIView.animate(withDuration: 0.3) { [weak self] in
+                    UIView.animate(withDuration: 0.3) {
                         self?.imageView.alpha = 1
                     }
                 }
@@ -380,45 +382,33 @@ public class AsyncImageView: UIView {
 
 private class ImageCache {
     static let shared = ImageCache()
-    
+
     private let cache = NSCache<NSString, UIImage>()
-    private var keys = [NSString]()
-    private let queue = DispatchQueue(label: "IP-CACHE-KEYS-QUEUE", attributes: .concurrent)
-    
+
+    init() {
+        cache.totalCostLimit = 200 * 1024 * 1024
+    }
+
     private func key(for identifier: String, size: CGSize, contentMode: UIView.ContentMode) -> NSString {
         "\(identifier)|\(round(size.width))|\(round(size.height))|\(contentMode.rawValue)" as NSString
     }
-    
+
     func image(for image: AsyncImage, size: CGSize, contentMode: UIView.ContentMode) -> UIImage? {
         if let identifier = image.key {
             return cache.object(forKey: key(for: identifier, size: size, contentMode: contentMode))
-        } else {
-            return nil
         }
+        return nil
     }
-    
-    func clearCache(for identifier: String) {
-        var validKeys: [NSString]!
-        
-        queue.sync {
-            validKeys = keys.filter { $0.contains(identifier) }
-            validKeys.forEach {
-                cache.removeObject(forKey: $0)
-            }
-        }
-        
-        queue.async(flags: .barrier) { [weak self] in
-            self?.keys.removeAll(where: { validKeys.contains($0) })
-        }
+
+    func clearCache() {
+        cache.removeAllObjects()
     }
-    
+
     func setResizedImage(_ image: UIImage, for originalImage: AsyncImage, at size: CGSize, contentMode: UIView.ContentMode) {
         if let identifier = originalImage.key {
-            let key = key(for: identifier, size: size, contentMode: contentMode)
-            cache.setObject(image, forKey: key)
-            queue.async(flags: .barrier) { [weak self] in
-                self?.keys.append(key)
-            }
+            let cacheKey = key(for: identifier, size: size, contentMode: contentMode)
+            let cost = Int(image.size.width * image.size.height * image.scale * image.scale * 4)
+            cache.setObject(image, forKey: cacheKey, cost: cost)
         }
     }
 }
