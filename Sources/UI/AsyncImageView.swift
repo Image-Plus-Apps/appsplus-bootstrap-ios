@@ -106,23 +106,24 @@ public struct LocalImage: AsyncImage, Equatable, Hashable {
     public func imagePublisher() -> AnyPublisher<AssetImage, URLError> {
         return Future<AssetImage, URLError> { promise in
             DispatchQueue.global(qos: .userInteractive).async {
-                guard let docDirectory = try? FileManager.default.url(for: .documentDirectory, in: .userDomainMask, appropriateFor: nil, create: false) else {
-                    promise(.failure(URLError(URLError.fileDoesNotExist)))
-                    return
+                autoreleasepool {
+                    guard let docDirectory = try? FileManager.default.url(for: .documentDirectory, in: .userDomainMask, appropriateFor: nil, create: false) else {
+                        promise(.failure(URLError(URLError.fileDoesNotExist)))
+                        return
+                    }
+
+                    let fileUrl = URL(fileURLWithPath: docDirectory.appendingPathComponent(path).path)
+
+                    guard let data = try? Data(contentsOf: fileUrl),
+                          let image = UIImage(data: data),
+                          let compressedImageData = image.jpegData(compressionQuality: compressRate),
+                          let compressedImage = UIImage(data: compressedImageData) else {
+                        promise(.failure(URLError(URLError.fileDoesNotExist)))
+                        return
+                    }
+
+                    promise(.success(AssetImage(image: compressedImage, isCached: false, originalRequest: self)))
                 }
-                
-                let fileUrl = URL(fileURLWithPath: docDirectory.appendingPathComponent(path).path)
-                
-                guard let data = try? Data(contentsOf: fileUrl),
-                      let image = UIImage(data: data),
-                      let compressedImageData = image.jpegData(compressionQuality: compressRate),
-                      let compressedImage = UIImage(data: compressedImageData) else {
-                    promise(.failure(URLError(URLError.fileDoesNotExist)))
-                    return
-                }
-                
-                promise(.success(AssetImage(image: compressedImage, isCached: false, originalRequest: self)))
-                
             }
         }.eraseToAnyPublisher()
     }
@@ -201,7 +202,7 @@ public class AsyncImageView: UIView {
     private var imageCancellable: AnyCancellable?
     private let imageView = UIImageView()
     private let activityIndicatorView = UIActivityIndicatorView(style: .medium)
-    private let resizeQueue = DispatchQueue(label: (Bundle.main.bundleIdentifier ?? "") + ".graphics.resize")
+    private static let resizeQueue = DispatchQueue(label: (Bundle.main.bundleIdentifier ?? "") + ".graphics.resize")
     public var shouldAutoResize = true
     
     public override var contentMode: UIView.ContentMode {
@@ -271,6 +272,15 @@ public class AsyncImageView: UIView {
             return
         }
         setNeedsFetchImage = false
+
+        if shouldAutoResize,
+           let cachedImage = ImageCache.shared.image(for: image, size: bounds.size, contentMode: contentMode) {
+            imageView.image = cachedImage
+            imageView.alpha = 1
+            state = .success
+            return
+        }
+
         state = .loading
         imageCancellable = image.imagePublisher()
             .flatMap { [weak self] (assetImage: AssetImage) -> AnyPublisher<AssetImage, URLError> in
@@ -356,10 +366,12 @@ public class AsyncImageView: UIView {
                 } else if let cachedImage = ImageCache.shared.image(for: asset.originalRequest, size: size, contentMode: contentMode) {
                     completion(.success(AssetImage(image: cachedImage, isCached: asset.isCached, originalRequest: asset.originalRequest)))
                 } else {
-                    self.resizeQueue.async {
-                        let resizedImage = self.redrawImage(asset.image, toFit: size, contentMode: contentMode)
-                        ImageCache.shared.setResizedImage(resizedImage, for: asset.originalRequest, at: size, contentMode: contentMode)
-                        completion(.success(AssetImage(image: resizedImage, isCached: asset.isCached, originalRequest: asset.originalRequest)))
+                    Self.resizeQueue.async {
+                        autoreleasepool {
+                            let resizedImage = self.redrawImage(asset.image, toFit: size, contentMode: contentMode)
+                            ImageCache.shared.setResizedImage(resizedImage, for: asset.originalRequest, at: size, contentMode: contentMode)
+                            completion(.success(AssetImage(image: resizedImage, isCached: asset.isCached, originalRequest: asset.originalRequest)))
+                        }
                     }
                 }
             }
@@ -383,116 +395,34 @@ public class AsyncImageView: UIView {
 private class ImageCache {
     static let shared = ImageCache()
 
-    private let memoryCache = NSCache<NSString, UIImage>()
-    private let diskQueue = DispatchQueue(label: (Bundle.main.bundleIdentifier ?? "") + ".image-cache.disk", attributes: .concurrent)
-    private let diskCacheURL: URL? = {
-        guard let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first else { return nil }
-        let url = caches.appendingPathComponent("ResizedImageCache", isDirectory: true)
-        try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
-        return url
-    }()
-    private let diskCapacity = 1024 * 1024 * 1024
-    private let maxDiskAge: TimeInterval = 3 * 24 * 60 * 60
+    private let cache = NSCache<NSString, UIImage>()
 
     init() {
-        memoryCache.totalCostLimit = 50 * 1024 * 1024
+        cache.totalCostLimit = 100 * 1024 * 1024
         NotificationCenter.default.addObserver(self, selector: #selector(handleMemoryWarning), name: UIApplication.didReceiveMemoryWarningNotification, object: nil)
-        trimExpiredDiskEntries()
     }
 
     @objc private func handleMemoryWarning() {
-        memoryCache.removeAllObjects()
-    }
-
-    private func trimExpiredDiskEntries() {
-        diskQueue.async(flags: .barrier) { [weak self] in
-            guard let self = self, let diskCacheURL = self.diskCacheURL else { return }
-            let fm = FileManager.default
-            let cutoff = Date().addingTimeInterval(-self.maxDiskAge)
-            guard let files = try? fm.contentsOfDirectory(at: diskCacheURL, includingPropertiesForKeys: [.contentModificationDateKey]) else { return }
-            for file in files {
-                guard let values = try? file.resourceValues(forKeys: [.contentModificationDateKey]),
-                      let modified = values.contentModificationDate,
-                      modified < cutoff else { continue }
-                try? fm.removeItem(at: file)
-            }
-        }
+        cache.removeAllObjects()
     }
 
     private func cacheKey(for identifier: String, size: CGSize, contentMode: UIView.ContentMode) -> NSString {
         "\(identifier)|\(round(size.width))|\(round(size.height))|\(contentMode.rawValue)" as NSString
     }
 
-    private func diskFileURL(for key: NSString) -> URL? {
-        guard let diskCacheURL = diskCacheURL else { return nil }
-        let filename = "\(key.hash).jpg"
-        return diskCacheURL.appendingPathComponent(filename)
-    }
-
     func image(for image: AsyncImage, size: CGSize, contentMode: UIView.ContentMode) -> UIImage? {
         guard let identifier = image.key else { return nil }
-        let key = cacheKey(for: identifier, size: size, contentMode: contentMode)
-
-        if let memoryHit = memoryCache.object(forKey: key) {
-            return memoryHit
-        }
-
-        guard let fileURL = diskFileURL(for: key),
-              let data = try? Data(contentsOf: fileURL),
-              let diskHit = UIImage(data: data) else {
-            return nil
-        }
-
-        let cost = Int(diskHit.size.width * diskHit.size.height * diskHit.scale * diskHit.scale * 4)
-        memoryCache.setObject(diskHit, forKey: key, cost: cost)
-        return diskHit
+        return cache.object(forKey: cacheKey(for: identifier, size: size, contentMode: contentMode))
     }
 
     func clearCache() {
-        memoryCache.removeAllObjects()
-        diskQueue.async(flags: .barrier) { [weak self] in
-            guard let url = self?.diskCacheURL else { return }
-            try? FileManager.default.removeItem(at: url)
-            try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
-        }
+        cache.removeAllObjects()
     }
 
     func setResizedImage(_ image: UIImage, for originalImage: AsyncImage, at size: CGSize, contentMode: UIView.ContentMode) {
         guard let identifier = originalImage.key else { return }
-        let key = cacheKey(for: identifier, size: size, contentMode: contentMode)
         let cost = Int(image.size.width * image.size.height * image.scale * image.scale * 4)
-        memoryCache.setObject(image, forKey: key, cost: cost)
-
-        diskQueue.async(flags: .barrier) { [weak self] in
-            guard let fileURL = self?.diskFileURL(for: key),
-                  let data = image.jpegData(compressionQuality: 0.9) else { return }
-            try? data.write(to: fileURL, options: .atomic)
-            self?.trimDiskCacheIfNeeded()
-        }
-    }
-
-    private func trimDiskCacheIfNeeded() {
-        guard let diskCacheURL = diskCacheURL else { return }
-        let fm = FileManager.default
-        guard let files = try? fm.contentsOfDirectory(at: diskCacheURL, includingPropertiesForKeys: [.contentAccessDateKey, .fileSizeKey]) else { return }
-
-        var totalSize = 0
-        var fileInfos = [(url: URL, accessDate: Date, size: Int)]()
-        for file in files {
-            guard let values = try? file.resourceValues(forKeys: [.contentAccessDateKey, .fileSizeKey]) else { continue }
-            let size = values.fileSize ?? 0
-            let date = values.contentAccessDate ?? Date.distantPast
-            totalSize += size
-            fileInfos.append((file, date, size))
-        }
-
-        guard totalSize > diskCapacity else { return }
-        fileInfos.sort { $0.accessDate < $1.accessDate }
-        for info in fileInfos {
-            try? fm.removeItem(at: info.url)
-            totalSize -= info.size
-            if totalSize <= diskCapacity { break }
-        }
+        cache.setObject(image, forKey: cacheKey(for: identifier, size: size, contentMode: contentMode), cost: cost)
     }
 }
 
