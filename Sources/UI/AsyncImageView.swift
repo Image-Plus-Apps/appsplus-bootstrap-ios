@@ -383,32 +383,115 @@ public class AsyncImageView: UIView {
 private class ImageCache {
     static let shared = ImageCache()
 
-    private let cache = NSCache<NSString, UIImage>()
+    private let memoryCache = NSCache<NSString, UIImage>()
+    private let diskQueue = DispatchQueue(label: (Bundle.main.bundleIdentifier ?? "") + ".image-cache.disk", attributes: .concurrent)
+    private let diskCacheURL: URL? = {
+        guard let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first else { return nil }
+        let url = caches.appendingPathComponent("ResizedImageCache", isDirectory: true)
+        try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        return url
+    }()
+    private let diskCapacity = 1024 * 1024 * 1024
+    private let maxDiskAge: TimeInterval = 3 * 24 * 60 * 60
 
     init() {
-        cache.totalCostLimit = 200 * 1024 * 1024
+        memoryCache.totalCostLimit = 50 * 1024 * 1024
+        NotificationCenter.default.addObserver(self, selector: #selector(handleMemoryWarning), name: UIApplication.didReceiveMemoryWarningNotification, object: nil)
+        trimExpiredDiskEntries()
     }
 
-    private func key(for identifier: String, size: CGSize, contentMode: UIView.ContentMode) -> NSString {
+    @objc private func handleMemoryWarning() {
+        memoryCache.removeAllObjects()
+    }
+
+    private func trimExpiredDiskEntries() {
+        diskQueue.async(flags: .barrier) { [weak self] in
+            guard let self = self, let diskCacheURL = self.diskCacheURL else { return }
+            let fm = FileManager.default
+            let cutoff = Date().addingTimeInterval(-self.maxDiskAge)
+            guard let files = try? fm.contentsOfDirectory(at: diskCacheURL, includingPropertiesForKeys: [.contentModificationDateKey]) else { return }
+            for file in files {
+                guard let values = try? file.resourceValues(forKeys: [.contentModificationDateKey]),
+                      let modified = values.contentModificationDate,
+                      modified < cutoff else { continue }
+                try? fm.removeItem(at: file)
+            }
+        }
+    }
+
+    private func cacheKey(for identifier: String, size: CGSize, contentMode: UIView.ContentMode) -> NSString {
         "\(identifier)|\(round(size.width))|\(round(size.height))|\(contentMode.rawValue)" as NSString
     }
 
+    private func diskFileURL(for key: NSString) -> URL? {
+        guard let diskCacheURL = diskCacheURL else { return nil }
+        let filename = "\(key.hash).jpg"
+        return diskCacheURL.appendingPathComponent(filename)
+    }
+
     func image(for image: AsyncImage, size: CGSize, contentMode: UIView.ContentMode) -> UIImage? {
-        if let identifier = image.key {
-            return cache.object(forKey: key(for: identifier, size: size, contentMode: contentMode))
+        guard let identifier = image.key else { return nil }
+        let key = cacheKey(for: identifier, size: size, contentMode: contentMode)
+
+        if let memoryHit = memoryCache.object(forKey: key) {
+            return memoryHit
         }
-        return nil
+
+        guard let fileURL = diskFileURL(for: key),
+              let data = try? Data(contentsOf: fileURL),
+              let diskHit = UIImage(data: data) else {
+            return nil
+        }
+
+        let cost = Int(diskHit.size.width * diskHit.size.height * diskHit.scale * diskHit.scale * 4)
+        memoryCache.setObject(diskHit, forKey: key, cost: cost)
+        return diskHit
     }
 
     func clearCache() {
-        cache.removeAllObjects()
+        memoryCache.removeAllObjects()
+        diskQueue.async(flags: .barrier) { [weak self] in
+            guard let url = self?.diskCacheURL else { return }
+            try? FileManager.default.removeItem(at: url)
+            try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        }
     }
 
     func setResizedImage(_ image: UIImage, for originalImage: AsyncImage, at size: CGSize, contentMode: UIView.ContentMode) {
-        if let identifier = originalImage.key {
-            let cacheKey = key(for: identifier, size: size, contentMode: contentMode)
-            let cost = Int(image.size.width * image.size.height * image.scale * image.scale * 4)
-            cache.setObject(image, forKey: cacheKey, cost: cost)
+        guard let identifier = originalImage.key else { return }
+        let key = cacheKey(for: identifier, size: size, contentMode: contentMode)
+        let cost = Int(image.size.width * image.size.height * image.scale * image.scale * 4)
+        memoryCache.setObject(image, forKey: key, cost: cost)
+
+        diskQueue.async(flags: .barrier) { [weak self] in
+            guard let fileURL = self?.diskFileURL(for: key),
+                  let data = image.jpegData(compressionQuality: 0.9) else { return }
+            try? data.write(to: fileURL, options: .atomic)
+            self?.trimDiskCacheIfNeeded()
+        }
+    }
+
+    private func trimDiskCacheIfNeeded() {
+        guard let diskCacheURL = diskCacheURL else { return }
+        let fm = FileManager.default
+        guard let files = try? fm.contentsOfDirectory(at: diskCacheURL, includingPropertiesForKeys: [.contentAccessDateKey, .fileSizeKey]) else { return }
+
+        var totalSize = 0
+        var fileInfos = [(url: URL, accessDate: Date, size: Int)]()
+        for file in files {
+            guard let values = try? file.resourceValues(forKeys: [.contentAccessDateKey, .fileSizeKey]) else { continue }
+            let size = values.fileSize ?? 0
+            let date = values.contentAccessDate ?? Date.distantPast
+            totalSize += size
+            fileInfos.append((file, date, size))
+        }
+
+        guard totalSize > diskCapacity else { return }
+        fileInfos.sort { $0.accessDate < $1.accessDate }
+        for info in fileInfos {
+            try? fm.removeItem(at: info.url)
+            totalSize -= info.size
+            if totalSize <= diskCapacity { break }
         }
     }
 }
