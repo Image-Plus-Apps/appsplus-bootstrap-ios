@@ -24,11 +24,31 @@ dependencies: [
 
 The package is split into three independent libraries so you only import what you need:
 
-- **`AppsPlusData`** — The data layer. Contains all networking, authentication, storage abstractions (Keychain, UserDefaults, Core Data, GRDB), model types, and WebSocket support. This is the core library that most apps will use. It has a dependency on PusherSwift for WebSocket functionality.
+- **`AppsPlusData`** — The data layer. Contains all networking, authentication, storage abstractions (Keychain, UserDefaults, Core Data, GRDB), network connectivity monitoring (`NetworkMonitor`), model types, and WebSocket support. This is the core library that most apps will use. It has a dependency on PusherSwift for WebSocket functionality.
 
-- **`AppsPlusUI`** — The UI layer. Contains UIKit-based components (calendar views, search bars, collection view cells, separator views), SwiftUI helpers (conditional view modifiers, keyboard observation), and the coordinator pattern implementation (`BaseCoordinator`, `NavigableCoordinator`, `AppNavigationStack`). Depends on CombineExtensions.
+- **`AppsPlusUI`** — The UI layer. Contains UIKit-based components (calendar views, search bars, collection view cells, separator views), SwiftUI components (declarative alerts, text-input alerts, a stylable segmented control), SwiftUI helpers (conditional view modifiers, keyboard observation, `apply`/`configure`, `toAnyView`), and the coordinator pattern implementation (`BaseCoordinator`, `NavigableCoordinator`, `AppNavigationStack`). Depends on CombineExtensions.
 
 - **`AppsPlusTesting`** — Test support. Provides mock implementations of all `AppsPlusData` protocols (`MockSecureStorage`, `MockKeyValueStorage`, `MockPersistentStorage`, `MockAuthSessionProvider`, `MockEventSocket`) so you can write unit tests without real backends. Also includes SwiftCheck generators for property-based testing of common types like `Data`, `Date`, `String`, `URL`, `UUID`, `Page`, and `ValidationError`.
+
+### Capability Index
+
+Before building something app-side, check whether the framework already provides it. Each entry links to its section below.
+
+| Need | Use | Module |
+|------|-----|--------|
+| HTTP requests with token auth & 401 refresh | [`Network` / `NetworkerImpl`](#networking) | `AppsPlusData` |
+| Persist / observe the logged-in session | [`AuthSessionProvider`](#authentication) | `AppsPlusData` |
+| Detect online/offline & react to reconnect | [`NetworkMonitor`](#connectivity-monitoring) | `AppsPlusData` |
+| Real-time events | [`EventSocket` / `PusherEventSocket`](#websockets) | `AppsPlusData` |
+| User defaults / Keychain / SQLite storage | [Storage](#storage) | `AppsPlusData` |
+| Present a native alert from a view model | [`AppAlert` + `.appAlert(_:)`](#appalert) | `AppsPlusUI` |
+| Alert with text/secure input fields | [`AppInputAlert` + `.appInputAlert(_:)`](#appinputalert-ios-17) | `AppsPlusUI` |
+| Present an alert from a `UIViewController` | [`showAlert(...)`](#uikit-components) | `AppsPlusUI` |
+| Fully stylable segmented control | [`StyledSegmentedControl`](#swiftui-components) | `AppsPlusUI` |
+| SwiftUI navigation stack + coordinators | [`AppNavigationStack` / `NavigableCoordinator`](#navigation) | `AppsPlusUI` |
+| Inline view transforms / type erasure | [`apply` / `configure` / `toAnyView`](#swiftui-view-extensions) | `AppsPlusUI` |
+| Async image loading | [`AsyncImageView` / `IPAsyncImageView`](#uikit-components) | `AppsPlusUI` |
+| Validate trimmed input | [`String.isBlank`](#utilities) | `AppsPlusData` |
 
 ---
 
@@ -112,6 +132,37 @@ if response.statusCode == 422 {
 ```
 
 `ValidationError` is generic over a `Field` type that you define as an enum of your form fields. The parser maps the JSON error keys to your enum cases, including support for nested dot-notation keys (e.g., `"address.street"` maps to the `address` field). If the response doesn't match the validation error format, it falls back to trying to parse a simple `ServerError` with a `message` field.
+
+### Connectivity Monitoring
+
+The `NetworkMonitor` protocol reports whether the device currently has a network path available. It exposes a Combine publisher for reactive observation and a synchronous getter for one-off checks:
+
+```swift
+public protocol NetworkMonitor {
+    func isOnlinePublisher() -> AnyPublisher<Bool, Never>
+    func isOnline() -> Bool
+}
+```
+
+The concrete implementation, `NetworkMonitorImpl`, is backed by `NWPathMonitor`. It publishes on the main queue and de-duplicates consecutive identical states, so subscribers only fire on an actual online/offline transition. This is the natural trigger for retrying failed uploads or refreshing data when connectivity is restored:
+
+```swift
+let networkMonitor: NetworkMonitor = NetworkMonitorImpl()
+
+// One-off check
+if networkMonitor.isOnline() {
+    try await sync()
+}
+
+// React to connectivity being restored
+networkMonitor.isOnlinePublisher()
+    .dropFirst()           // ignore the initial value
+    .filter { $0 }         // only when coming back online
+    .sink { _ in Task { await sync() } }
+    .store(in: &cancellables)
+```
+
+Register a single instance in your dependency graph and inject it wherever connectivity matters. `NetworkMonitorImpl` is `Sendable` and cancels its underlying monitor on `deinit`.
 
 ---
 
@@ -477,6 +528,103 @@ struct HomeView: View {
 }
 ```
 
+### Alerts (SwiftUI)
+
+The UI library provides two declarative, value-type alert systems so view models can request alerts without importing SwiftUI. Both are driven by an optional binding — set it to present, and the modifier clears it to `nil` on dismissal.
+
+#### AppAlert
+
+`AppAlert` describes a native SwiftUI alert (title, message, buttons with optional `.cancel`/`.destructive` roles). Present it with the `appAlert(_:)` modifier bound to an `AppAlert?`. Factory helpers cover the common cases (`ok`, `error`, `confirmation`). All button titles default to English literals — pass your own localised strings to override:
+
+```swift
+@State private var alert: AppAlert?
+
+var body: some View {
+    ContentView()
+        .appAlert($alert)
+}
+
+// Informational
+alert = .ok(title: "Saved", message: "Your changes were saved.")
+
+// Error with an optional retry
+alert = .error(error, title: "Upload Failed", retryTitle: "Retry", retryHandler: {
+    Task { await retry() }
+})
+
+// Confirmation
+alert = .confirmation(
+    title: "Delete Item?",
+    message: "This cannot be undone.",
+    confirmTitle: "Delete",
+    confirmRole: .destructive,
+    onConfirm: { delete() }
+)
+```
+
+`AppAlert` is `Foundation`-only, so it can be stored on a view model and exposed to the view via a `@Published` property.
+
+#### AppInputAlert (iOS 17+)
+
+SwiftUI's native alert cannot host text fields, so `AppInputAlert` renders a custom card (a glass effect on iOS 26, `.regularMaterial` below) with one or more input fields. Present it with `appInputAlert(_:)`. Factory helpers cover single text input, secure input, and multiple fields:
+
+```swift
+@State private var inputAlert: AppInputAlert?
+
+var body: some View {
+    ContentView()
+        .appInputAlert($inputAlert)
+}
+
+// Single text field
+inputAlert = .input(
+    title: "Rename",
+    placeholder: "New name",
+    defaultValue: currentName,
+    onConfirm: { newName in rename(to: newName) }
+)
+
+// Secure field
+inputAlert = .secureInput(
+    title: "Enter Password",
+    placeholder: "Password",
+    onConfirm: { password in unlock(with: password) }
+)
+
+// Multiple fields — the confirm handler receives one value per field, in order
+inputAlert = .multiInput(
+    title: "Credentials",
+    fields: [
+        .init(placeholder: "Email"),
+        .init(placeholder: "Password", isSecure: true)
+    ],
+    onConfirm: { values in login(email: values[0], password: values[1]) }
+)
+```
+
+Buttons are automatically ordered to match native iOS behaviour (cancel on the left for two buttons, destructive first / cancel last when stacked).
+
+### SwiftUI Components
+
+- **`StyledSegmentedControl` (iOS 13+)** — A `UIViewRepresentable` wrapper over `UISegmentedControl` that binds to any `Hashable & CaseIterable & Identifiable` value, giving full control over segment fonts and colours (which SwiftUI's `Picker(.segmented)` does not expose). Styling defaults to neutral system values; override them for your design system:
+
+```swift
+enum Filter: String, CaseIterable, Identifiable {
+    case all, active, archived
+    var id: Self { self }
+}
+
+@State private var filter: Filter = .all
+
+StyledSegmentedControl(
+    selection: $filter,
+    normalTextColor: .white,
+    selectedTextColor: .black,
+    selectedTintColor: .white
+) { $0.rawValue.capitalized }
+.frame(height: 32)
+```
+
 ### UIKit Components
 
 The UI library also includes a collection of UIKit-based components for common patterns:
@@ -489,10 +637,21 @@ The UI library also includes a collection of UIKit-based components for common p
 - **`LoadingCell` / `RetryCell`** — `UICollectionViewCell` subclasses for displaying loading spinners and retry buttons in collection views.
 - **`EmptyStateView`** — A generic view for displaying empty state messages with an optional action control.
 - **`StackView`** — A generic `UIView` subclass that manages a typed array of child views in a stack layout.
+- **`UIViewController.showAlert(...)`** — A convenience for presenting a `UIAlertController` with a dismiss button and an optional retry action. Useful from coordinators or hosting controllers that are still UIKit:
+
+```swift
+showAlert(
+    title: "Something Went Wrong",
+    message: error.localizedDescription,
+    retryHandler: { self.retry() }
+)
+```
 
 ### SwiftUI View Extensions
 
 - **Conditional modifiers** — `View.if(_:transform:)` applies a modifier only when a condition is true, avoiding the need for `Group`/`if-else` blocks.
+- **Transform helpers** — `View.apply { }` returns the result of an arbitrary (possibly type-changing) transform inline in a modifier chain; `ToolbarContent.apply { }` does the same for toolbar content. `View.configure { }` runs a side-effecting block and returns the view unchanged.
+- **Type erasure** — `View.toAnyView()` wraps the view in `AnyView`, handy when a property or closure must return a single concrete view type.
 - **Keyboard observation** — `View.onKeyboardAppear` and `View.onKeyboardDisappear` attach Combine-based keyboard notification listeners.
 - **Corner radius** — The `CornerRadius` enum provides named corner radius values for consistent spacing.
 - **Margins** — `CGFloat.Margin` provides named margin/spacing constants.
@@ -503,6 +662,18 @@ The UI library also includes a collection of UIKit-based components for common p
 - **`RetryState`** — An enum for retry-capable operations: `.idle`, `.loading`, `.error(ErrorWrapper)`.
 - **`ErrorWrapper`** — A `Sendable` struct that wraps an `Error` with `Equatable` conformance (by comparing `localizedDescription`), making it usable in SwiftUI state.
 - **`TimeLock`** — A simple rate-limiter struct. Call `lock()` to set the current time, then `unlock()` throws if not enough time has passed since the last lock. Useful for preventing rapid duplicate API calls or button taps.
+
+---
+
+## Utilities
+
+Small, dependency-free helpers that most apps end up re-implementing.
+
+- **`String.isBlank`** (`AppsPlusData`) — `true` when the string is empty or contains only whitespace and newlines. Prefer this over `isEmpty` when validating trimmed user input:
+
+```swift
+guard !name.isBlank else { return }
+```
 
 ---
 
