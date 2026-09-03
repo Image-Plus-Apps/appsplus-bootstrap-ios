@@ -13,10 +13,10 @@ struct AppInputAlertModifier: ViewModifier {
             .overlay {
                 if alert != nil {
                     // Deliberately does *not* ignore the safe area: `.all` includes `.keyboard`,
-                    // which is the inset SwiftUI uses to lift content clear of it. Ignoring it kept
-                    // the card pinned to the middle of the screen, so an iPad keyboard covered the
-                    // field being typed into along with both buttons. The dimming layer inside
-                    // `alertOverlay` still reaches the screen edges on its own.
+                    // which is the inset SwiftUI uses to lift content clear of it. Ignoring it here
+                    // kept the card pinned to the middle of the screen, so an iPad keyboard covered
+                    // the field being typed into along with both buttons. The dimming layer inside
+                    // `alertOverlay` ignores it instead, so the dim still reaches the screen edges.
                     alertOverlay
                 }
             }
@@ -35,6 +35,10 @@ struct AppInputAlertModifier: ViewModifier {
         ZStack {
             Color.black.opacity(isVisible ? 0.15 : 0)
                 .animation(.easeInOut(duration: 0.25), value: isVisible)
+                // Only the dimming ignores the safe area, so it still covers the status bar and the
+                // home indicator. Doing this on the whole overlay is what used to trap the card
+                // behind the keyboard — `.all` includes `.keyboard`.
+                .ignoresSafeArea(.all)
 
             if isVisible, let alert {
                 alertCard(for: alert)
