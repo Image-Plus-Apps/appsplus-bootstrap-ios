@@ -12,8 +12,12 @@ struct AppInputAlertModifier: ViewModifier {
         content
             .overlay {
                 if alert != nil {
+                    // Deliberately does *not* ignore the safe area: `.all` includes `.keyboard`,
+                    // which is the inset SwiftUI uses to lift content clear of it. Ignoring it kept
+                    // the card pinned to the middle of the screen, so an iPad keyboard covered the
+                    // field being typed into along with both buttons. The dimming layer inside
+                    // `alertOverlay` still reaches the screen edges on its own.
                     alertOverlay
-                        .ignoresSafeArea(.all)
                 }
             }
             .onChange(of: alert?.id) { _, _ in
@@ -119,8 +123,8 @@ struct AppInputAlertModifier: ViewModifier {
                 SecureField(field.placeholder, text: binding)
             } else {
                 TextField(field.placeholder, text: binding)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
+                    .textInputAutocapitalization(field.capitalization.textInputAutocapitalization)
+                    .autocorrectionDisabled(field.autocorrectionDisabled)
             }
         }
         .font(.system(size: 15))
@@ -177,6 +181,21 @@ struct AppInputAlertModifier: ViewModifier {
         }
     }
 
+}
+
+@available(iOS 17.0, tvOS 17.0, *)
+private extension AppInputAlert.Capitalization {
+
+    /// Kept here rather than on the model: `TextInputAutocapitalization` is UIKit-only, and
+    /// `AppInputAlert` builds for macOS and watchOS too.
+    var textInputAutocapitalization: TextInputAutocapitalization {
+        switch self {
+        case .never: .never
+        case .words: .words
+        case .sentences: .sentences
+        case .characters: .characters
+        }
+    }
 }
 
 @available(iOS 17.0, tvOS 17.0, *)

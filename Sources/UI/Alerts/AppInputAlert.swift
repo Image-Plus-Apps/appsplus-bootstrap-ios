@@ -28,16 +28,40 @@ public struct AppInputAlert: Identifiable {
         public let placeholder: String
         public let defaultValue: String
         public let isSecure: Bool
+        public let capitalization: Capitalization
+        /// Named to match SwiftUI's own `autocorrectionDisabled(_:)`, and `false` by default so a
+        /// field behaves like a plain `TextField`. It used to be forced on for every field. Pass
+        /// `true` for a reference, a code, or anything else autocorrect would mangle.
+        public let autocorrectionDisabled: Bool
 
         public init(
             placeholder: String,
             defaultValue: String = "",
-            isSecure: Bool = false
+            isSecure: Bool = false,
+            capitalization: Capitalization = .sentences,
+            autocorrectionDisabled: Bool = false
         ) {
             self.placeholder = placeholder
             self.defaultValue = defaultValue
             self.isSecure = isSecure
+            self.capitalization = capitalization
+            self.autocorrectionDisabled = autocorrectionDisabled
         }
+    }
+
+    /// How the keyboard capitalises what's typed into a field.
+    ///
+    /// Its own type rather than SwiftUI's `TextInputAutocapitalization`, which is UIKit-only while
+    /// this file also builds for macOS and watchOS. ``AppInputAlertModifier`` maps it across.
+    ///
+    /// The default is `.sentences`, matching a plain `TextField`. It used to be forced to `.never`
+    /// for every field, which made the alert unusable for anything a person reads — a name typed
+    /// into it came out lowercase. Pass `.never` for a username, a code or an email.
+    public enum Capitalization: Sendable {
+        case never
+        case words
+        case sentences
+        case characters
     }
 
     public struct AlertButton {
@@ -68,6 +92,8 @@ public extension AppInputAlert {
         message: String? = nil,
         placeholder: String,
         defaultValue: String = "",
+        capitalization: Capitalization = .sentences,
+        autocorrectionDisabled: Bool = false,
         confirmTitle: String = "OK",
         onConfirm: @escaping (String) -> Void,
         cancelTitle: String = "Cancel",
@@ -76,7 +102,14 @@ public extension AppInputAlert {
         AppInputAlert(
             title: title,
             message: message,
-            fields: [InputField(placeholder: placeholder, defaultValue: defaultValue)],
+            fields: [
+                InputField(
+                    placeholder: placeholder,
+                    defaultValue: defaultValue,
+                    capitalization: capitalization,
+                    autocorrectionDisabled: autocorrectionDisabled
+                )
+            ],
             buttons: [
                 AlertButton(title: confirmTitle) { values in
                     onConfirm(values.first ?? "")

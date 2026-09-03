@@ -595,7 +595,7 @@ inputAlert = .secureInput(
 inputAlert = .multiInput(
     title: "Credentials",
     fields: [
-        .init(placeholder: "Email"),
+        .init(placeholder: "Email", capitalization: .never),
         .init(placeholder: "Password", isSecure: true)
     ],
     onConfirm: { values in login(email: values[0], password: values[1]) }
@@ -603,6 +603,18 @@ inputAlert = .multiInput(
 ```
 
 Buttons are automatically ordered to match native iOS behaviour (cancel on the left for two buttons, destructive first / cancel last when stacked).
+
+Each field behaves like a plain `TextField` unless told otherwise. `capitalization` defaults to `.sentences` and `autocorrectionDisabled` to `false`; set them per field for content the keyboard shouldn't help with:
+
+```swift
+.init(placeholder: "Email", capitalization: .never)                       // no leading capital
+.init(placeholder: "Reference", autocorrectionDisabled: true)             // don't "correct" a code
+.init(placeholder: "Postcode", capitalization: .characters)               // SW1A 1AA
+```
+
+`Capitalization` is the framework's own enum rather than SwiftUI's `TextInputAutocapitalization`, because `AppInputAlert` is `Foundation`-only and builds for macOS and watchOS as well.
+
+> **Behaviour change** — these two used to be forced to `.never` and `true` for every field, which made the alert unusable for anything a person reads: a name typed into it came out lowercase. They are now per-field and default to the platform behaviour, so **an existing caller that wants the old behaviour has to ask for it**: `capitalization: .never`, `autocorrectionDisabled: true`. The same change fixed the card not moving out from under the keyboard — it was rendered with `.ignoresSafeArea(.all)`, and `.all` includes `.keyboard`, so on an iPad the keyboard covered the field being typed into along with both buttons.
 
 ### SwiftUI Components
 
