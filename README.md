@@ -64,7 +64,7 @@ The networking layer is built around three protocols that work together:
 
 - **`Request`** — A lightweight wrapper around `URLRequest` that carries a `requiresAuthentication` flag. This flag tells the authenticator whether it needs to attach credentials or pass the request through as-is.
 
-The concrete implementation, `NetworkerImpl`, ties these together. When you call `perform(request:)`, it passes the request to the authenticator, executes the authenticated URL request via `URLSession`, and handles 401 responses by automatically retrying with a forced token refresh. If the retry also fails, it throws `NetworkError.notAuthenticated`.
+The concrete implementation, `NetworkerImpl`, ties these together. When you call `perform(request:)`, it passes the request to the authenticator, executes the authenticated URL request via `URLSession`, and handles 401 responses by automatically retrying with a forced token refresh. If the retry also fails, it throws `NetworkError.notAuthenticated`. That retry can be switched off — see [Reading a 401 yourself](#reading-a-401-yourself).
 
 ### Setup
 
@@ -101,6 +101,39 @@ request.set(headerField: .authorization, value: .bearer(token: "abc"))
 
 The `HTTPHeaderField` and `HTTPHeaderValue` types are stringly-typed wrappers that conform to `ExpressibleByStringLiteral`, so you can define custom headers easily while still getting type safety for common ones like `.authorization`, `.contentType`, and `.accept`.
 
+### Reading a 401 Yourself
+
+By default a 401 never reaches your code as a response. `NetworkerImpl` retries the request once with a forced credential refresh, and if that also comes back 401 it throws `NetworkError.notAuthenticated`. That is the right behaviour for token auth, where a 401 usually means "the access token has expired, go and get another one".
+
+It is the wrong behaviour when the 401 *is* the answer. A sign-in screen that validates credentials by calling an endpoint needs the status code: without it a rejected password is indistinguishable from a transport failure, because both arrive as the same thrown error. The same goes for any API that authenticates every call outright — HTTP Basic, for instance — where there is no token to refresh, so the retry can only cost a second round trip and hide the response.
+
+There are two ways to turn it off, and **the retry happens only where both agree to it**: either side can switch it off and neither can force it back on.
+
+Per request, through `Request.retriesOnUnauthorized`:
+
+```swift
+let request = AuthenticatedRequest(urlRequest: urlRequest, retriesOnUnauthorized: false)
+
+let (data, response) = try await network.perform(request: request)
+if response.statusCode == 401 {
+    // The credentials were rejected, and you can say so.
+}
+```
+
+Or for every request, on the networker:
+
+```swift
+let network = NetworkerImpl(
+    session: .shared,
+    authenticator: authenticator,
+    retriesOnUnauthorized: false
+)
+```
+
+`retriesOnUnauthorized` defaults to `true` in both places, so existing code behaves exactly as before. The property has a default implementation on `Request`, so your own conforming types need no change unless they want to opt out.
+
+Note that a `PublicRequest` is retried too unless you say otherwise. The authenticator passes it through unmodified, so there is nothing for the refresh to change — turning the retry off is usually what you want on a request that carries no credentials.
+
 ### Global Headers and Request Logging
 
 The `BearerAuthenticator` provides two optional callbacks that are applied to every request:
@@ -116,7 +149,7 @@ Both are optional and `nil` by default.
 The networking layer uses two error types:
 
 **`NetworkError`** is thrown by `NetworkerImpl.perform(request:)` and has two cases:
-- `.notAuthenticated` — The request required authentication but the token was missing, expired, and could not be refreshed.
+- `.notAuthenticated` — The request required authentication but the token was missing, expired, and could not be refreshed. A 401 you have chosen to handle yourself is returned as an ordinary response instead of being thrown — see [Reading a 401 Yourself](#reading-a-401-yourself).
 - `.urlError(URLError)` — A transport-level error occurred (no internet, timeout, DNS failure, etc.).
 
 **`ServerError`** and **`ValidationError`** are not thrown by the network layer itself, but the framework provides parsing helpers on `Data` for extracting them from response bodies. This is designed around the Laravel API convention where a 422 response contains validation errors in a `{"errors": {"field": ["message"]}}` JSON structure:

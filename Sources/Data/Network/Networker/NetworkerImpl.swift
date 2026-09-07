@@ -80,18 +80,47 @@ public struct NetworkerImpl: Network {
         case authenticator(AuthenticatorError)
         case urlError(URLError)
         case unknown
+
+        /// What the caller is given. `RequestError` is this type's own bookkeeping and never leaves it —
+        /// `perform(request:)` maps every case through here.
+        var networkError: NetworkError {
+            switch self {
+            case .unauthorized, .authenticator:
+                return .notAuthenticated
+            case .urlError(let urlError):
+                return .urlError(urlError)
+            case .unknown:
+                return .urlError(URLError(.unknown))
+            }
+        }
     }
     
     private let session: URLSession
     private let authenticator: Authenticator
+    private let retriesOnUnauthorized: Bool
     
-    public init(session: URLSession, authenticator: Authenticator) {
+    /// - Parameter retriesOnUnauthorized: whether a `401` is retried once with a forced credential
+    /// refresh. `true` by default, which is the behaviour this type has always had. Pass `false` to turn
+    /// the retry off for **every** request — an API that authenticates each call outright, HTTP Basic for
+    /// instance, has nothing to refresh, so the retry can only ever cost a second round trip and hide the
+    /// `401` from the caller.
+    ///
+    /// A single request can opt out on its own through `Request.retriesOnUnauthorized`. **The retry
+    /// happens only where both agree to it**, so either side can switch it off and neither can force it
+    /// back on.
+    public init(session: URLSession, authenticator: Authenticator, retriesOnUnauthorized: Bool = true) {
         self.session = session
         self.authenticator = authenticator
+        self.retriesOnUnauthorized = retriesOnUnauthorized
     }
     
     public func perform(request: Request) async throws -> (data: Data, response: HTTPURLResponse) {
-        let values = try await perform(request: request, forceAuthRefresh: false)
+        let values: (data: Data, response: URLResponse)
+        do {
+            values = try await perform(request: request, forceAuthRefresh: false)
+        } catch let error as RequestError {
+            throw error.networkError
+        }
         
         guard let response = values.response as? HTTPURLResponse else {
             throw NetworkError.urlError(URLError(.badServerResponse))
@@ -100,35 +129,31 @@ public struct NetworkerImpl: Network {
         return (data: values.data, response: response)
     }
     
-    private func perform(request: Request) async throws -> (data: Data, response: URLResponse) {
-        do {
-            return try await perform(request: request, forceAuthRefresh: false)
-        } catch let error as RequestError {
-            switch error {
-            case .unknown:
-                throw NetworkError.urlError(URLError(.unknown))
-            case .authenticator, .unauthorized:
-                throw NetworkError.notAuthenticated
-            case .urlError(let urlError):
-                throw NetworkError.urlError(urlError)
-            }
-        }
-    }
-    
     private func perform(request: Request, forceAuthRefresh: Bool) async throws -> (data: Data, response: URLResponse) {
         do {
             let authenticatedRequest = try await authenticator.authenticate(request: request, forceRefresh: forceAuthRefresh, urlSession: session)
             let (data, response) = try await session.data(for: authenticatedRequest)
             
             if let httpResponse = response as? HTTPURLResponse, httpResponse.isUnauthorized {
-                if !forceAuthRefresh {
+                if !forceAuthRefresh, retriesOnUnauthorized, request.retriesOnUnauthorized {
                     return try await perform(request: request, forceAuthRefresh: true)
-                } else {
+                } else if forceAuthRefresh {
                     throw RequestError.unauthorized
                 }
+                // The retry is turned off, here or on the request itself, so the `401` is handed back as
+                // the response it is rather than thrown. This is the only way a caller can read the status
+                // code of an unauthorised response — see `Request.retriesOnUnauthorized`.
             }
             
             return (data, response)
+        } catch let error as RequestError {
+            // Already classified, so it passes straight through. Without this the `catch` below rewrites
+            // it to `.unknown`, and two things it must not touch are thrown from inside the `do` above:
+            // the `.unauthorized` raised when a forced refresh still comes back `401`, and whatever the
+            // retry itself threw. Both were arriving at the caller as `.urlError(.unknown)` — so a
+            // rejected credential was reported as a transport failure and `.notAuthenticated` could not
+            // actually be produced by this type.
+            throw error
         } catch let error as AuthenticatorError {
             throw RequestError.authenticator(error)
         } catch let error as URLError {
